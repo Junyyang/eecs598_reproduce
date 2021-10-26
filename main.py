@@ -34,10 +34,12 @@ train_data, test_data = load_mnist(path)
 
 data_split = sample_iid(train_data, args.number_client)
 
+
 print("model type: ", args.model_type)
 print("dataset: ", args.datatype)
 print("target test accuracy: ", args.target)
 
+print("Start training")
 clients = []
 for i in range(args.number_client):
     client = Client(train_data, data_split[i], args)
