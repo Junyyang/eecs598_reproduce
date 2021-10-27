@@ -241,13 +241,16 @@ class Server:
                 acc_test, test_loss = self.test()
                 accs.append(str(float(acc_test)) + '\n')
                 losses.append(str(float(test_loss)) + '\n')
-                if acc_test >= self.args.target or i==round:
+                if acc_test >= self.args.target or i==(round-1):
                     open('data/results/accs_' + self.args.datatype + self.args.model_type + self.args.datatype + '_lr_' + str(self.args.sample_rate)
                         + 'target_acc_' + str(self.args.target), 'w').writelines(accs)
                     open('data/results/losses_' + self.args.datatype + self.args.model_type + self.args.datatype + '_lr_' + str(self.args.sample_rate)
                         + 'target_acc_' + str(self.args.target), 'w').writelines(losses)
                     print('Round {:3d}, Average loss {:.4f}'.format(i, test_loss))
                     break
+            model_path = 'data/saved_models/model_' + self.args.model_type + self.args.datatype + '_lr_' + str(
+                        self.args.sample_rate) + 'target_acc_' + str(self.args.target)
+            torch.save(self.global_weights.state_dict(), path)
 
     # test the trained model with test data
     def test(self):
