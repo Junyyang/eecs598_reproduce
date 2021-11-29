@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import os
 import argparse
+import time
 
 random_seed = 6666
 np.random.seed(random_seed)
@@ -14,6 +15,7 @@ from utils import load_mnist, sample_iid, load_cifar, load_LFW
 from conf import Args
 
 if __name__ == "__main__":
+    time_begin = time.time()
     args = Args()
 
     '''
@@ -68,5 +70,8 @@ if __name__ == "__main__":
     # summary(server.server_model, (1, 784))
     # exit()
     server.train()
+    time_end = time.time()
+
+    print('The entire training takes {} seconds.'.format(time_end-time_begin))
 
 
