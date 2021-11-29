@@ -52,6 +52,8 @@ class Server:
         self.global_weights = copy.deepcopy(self.server_model.state_dict())
         if self.args.model_type == 'MLP_SketchLinear' or self.args.model_type == 'CNN_sketch':
             self.sizes = self.server_model.weight_sizes()
+            #print(self.sizes)
+        #assert False
 
     # collect local gradients from the selected clients in each communicaiton rounds
     def get_grads(self):
@@ -62,18 +64,31 @@ class Server:
     def broadcast(self):
         # randomly generate sketch matrix in a communication round
         if self.args.model_type == 'MLP_SketchLinear' or self.args.model_type == 'CNN_sketch':
-            hash_idxs = []
-            rand_sgns = []
-            for size in self.sizes:
-                hash_idx, rand_sgn = Sketch.rand_hashing(size, q=self.args.p)
-                hash_idxs.append(hash_idx)
-                rand_sgns.append(rand_sgn)
-            num_client = int(len(self.clients) * self.args.sample_rate)
-            # select working client in a round
-            self.working_client = np.random.choice(len(self.clients), num_client, replace=False)
-            for client_id in self.working_client:
-                self.clients[client_id].get_paras(copy.deepcopy(self.global_weights), hash_idxs, rand_sgns)
-            return hash_idxs, rand_sgns
+            if self.args.sketchtype == 'gaussian':
+                sketch_matrices = [Sketch.gaussian_sketch_matrices(size, q=self.args.p) for size in self.sizes]
+                #print(self.sizes)
+                #for fm in sketch_matrices:
+                #    print(fm.shape)
+                #assert False
+                num_client = int(len(self.clients) * self.args.sample_rate)
+                # select working client in a round
+                self.working_client = np.random.choice(len(self.clients), num_client, replace=False)
+                for client_id in self.working_client:
+                    self.clients[client_id].get_paras(copy.deepcopy(self.global_weights), None, None, sketch_matrices)
+                return sketch_matrices
+            else:
+                hash_idxs = []
+                rand_sgns = []
+                for size in self.sizes:
+                    hash_idx, rand_sgn = Sketch.rand_hashing(size, q=self.args.p)
+                    hash_idxs.append(hash_idx)
+                    rand_sgns.append(rand_sgn)
+                num_client = int(len(self.clients) * self.args.sample_rate)
+                # select working client in a round
+                self.working_client = np.random.choice(len(self.clients), num_client, replace=False)
+                for client_id in self.working_client:
+                    self.clients[client_id].get_paras(copy.deepcopy(self.global_weights), hash_idxs, rand_sgns)
+                return hash_idxs, rand_sgns
         else:
             num_client = int(len(self.clients) * self.args.sample_rate)
             self.working_client = np.random.choice(len(self.clients), num_client, replace=False)
@@ -143,25 +158,39 @@ class Server:
     # S^+ = 1/p * S^T, p is the the parameters of Sketch
     # the metrics we used are F-norm and cosine similarity
 
-    def w_err_client(self, w_old, w_new, hash_idxs_old, rand_sgns_old, hash_idxs_new, rand_sgns_new):
+    def w_err_client(self, w_old, w_new, hash_idxs_old, rand_sgns_old, sketch_matrices_old, hash_idxs_new, rand_sgns_new, sketch_matrices_new):
         err = 0
         i = 0
         delta_ws, delta_tilde_ws, delta_tilde_ws_scale = [], [], []
         start_index = 2 if self.args.model_type == 'CNN_sketch' and self.args.datatype == 'cifar' else 0
         w_old_list = list(w_old.values())[start_index:]
         w_new_list = list(w_new.values())[start_index:]
+        
         for w_o, w_n in zip(w_old_list, w_new_list):
             if len(w_o.shape) == 1:
                 continue
-            if i < len(hash_idxs_old):
-                w_o_sketch = Sketch.countsketch(w_o.to(self.args.device), hash_idxs_old[i], rand_sgns_old[i]).to(
-                    self.args.device)
-                w_o_tran_sketch = Sketch.transpose_countsketch(w_o_sketch.to(self.args.device), hash_idxs_old[i],
-                                                               rand_sgns_old[i]).to(self.args.device)
-                w_n_sketch = Sketch.countsketch(w_n.to(self.args.device), hash_idxs_new[i], rand_sgns_new[i]).to(
-                    self.args.device)
-                w_n_tran_sketch = Sketch.transpose_countsketch(w_n_sketch.to(self.args.device), hash_idxs_new[i],
-                                                               rand_sgns_new[i]).to(self.args.device)
+            if self.args.sketchtype == 'count':
+                lth = len(hash_idxs_old)
+            else:
+                lth = len(sketch_matrices_old)
+            if i < lth:
+                if self.args.sketchtype == 'count':
+                    w_o_sketch = Sketch.countsketch(w_o.to(self.args.device), hash_idxs_old[i], rand_sgns_old[i]).to(
+                        self.args.device)
+                    w_o_tran_sketch = Sketch.transpose_countsketch(w_o_sketch.to(self.args.device), hash_idxs_old[i],
+                                                                rand_sgns_old[i]).to(self.args.device)
+                    w_n_sketch = Sketch.countsketch(w_n.to(self.args.device), hash_idxs_new[i], rand_sgns_new[i]).to(
+                        self.args.device)
+                    w_n_tran_sketch = Sketch.transpose_countsketch(w_n_sketch.to(self.args.device), hash_idxs_new[i],
+                                                                rand_sgns_new[i]).to(self.args.device)
+                else:
+                    w_o_sketch = Sketch.gaussiansketch(w_o.to(self.args.device), sketch_matrices_old[i]).to(
+                        self.args.device)
+                    w_o_tran_sketch = Sketch.transpose_gaussiansketch(w_o_sketch.to(self.args.device), sketch_matrices_old[i]).to(self.args.device)
+                    w_n_sketch = Sketch.gaussiansketch(w_n.to(self.args.device), sketch_matrices_new[i]).to(
+                        self.args.device)
+                    w_n_tran_sketch = Sketch.transpose_gaussiansketch(w_n_sketch.to(self.args.device), sketch_matrices_new[i]).to(self.args.device)
+                
                 delta_w = w_o - w_n
                 delta_tilde_w = w_o_tran_sketch - w_n_tran_sketch
                 delta_tilde_w_scale = 0.5 * delta_tilde_w
@@ -184,14 +213,18 @@ class Server:
     def train(self):
         accs, losses, errs_client, errs_client_scale, errs_client_cosine = [], [], [], [], []
         round = self.args.round
-        w_old, hash_idxs_old, rand_sgns_old = None, None, None
+        w_old, hash_idxs_old, rand_sgns_old, sketch_matrices_old = None, None, None, None
         for i in range(round):
             print('server round', i)
             if self.args.model_type == 'MLP_SketchLinear' or self.args.model_type == 'CNN_sketch':
                 w_new = copy.deepcopy(self.global_weights)
-                hash_idxs_new, rand_sgns_new = self.broadcast()
+                hash_idxs_new, rand_sgns_new, sketch_matrices_new = None, None, None
+                if self.args.sketchtype == 'count':
+                    hash_idxs_new, rand_sgns_new = self.broadcast()
+                else:
+                    sketch_matrices_new = self.broadcast()
                 if i >= 1:
-                    w_error, w_err_scale, w_err_cosine = self.w_err_client(w_old, w_new, hash_idxs_old, rand_sgns_old, hash_idxs_new, rand_sgns_new)
+                    w_error, w_err_scale, w_err_cosine = self.w_err_client(w_old, w_new, hash_idxs_old, rand_sgns_old, sketch_matrices_old, hash_idxs_new, rand_sgns_new, sketch_matrices_new)
                     # w_error_server = self.w_err_server(w_old, w_new, hash_idxs_old, rand_sgns_old)
                     errs_client.append(w_error.detach().cpu().numpy())
                     errs_client_scale.append(w_err_scale.detach().cpu().numpy())
@@ -202,7 +235,7 @@ class Server:
                     print('client side weight error cosine:', w_err_cosine.detach().cpu().numpy())
                     # print('server sizde weight error:', w_error_server.detach().cpu().numpy())
                 w_old = w_new
-                hash_idxs_old, rand_sgns_old = hash_idxs_new, rand_sgns_new
+                hash_idxs_old, rand_sgns_old, sketch_matrices_old = hash_idxs_new, rand_sgns_new, sketch_matrices_new
 
                 for client_id in self.working_client:
                     ### print('client', client_id)  # cancel print client
@@ -250,7 +283,7 @@ class Server:
                     break
             model_path = 'data/saved_models/model_' + self.args.model_type + self.args.datatype + '_lr_' + str(
                         self.args.sample_rate) + 'target_acc_' + str(self.args.target)
-            torch.save(self.global_weights.state_dict(), path)
+            torch.save(self.global_weights, model_path)
 
     # test the trained model with test data
     def test(self):
@@ -263,7 +296,7 @@ class Server:
                 data, target = data.cuda(), target.cuda()
             data, target = data.to(self.args.device), target.to(self.args.device)
             if self.args.model_type == 'MLP_SketchLinear' or self.args.model_type == 'CNN_sketch':
-                log_probs = self.server_model(data, [None] * len(self.sizes), [None] * len(self.sizes))
+                log_probs = self.server_model(data, [None] * len(self.sizes), [None] * len(self.sizes), [None] * len(self.sizes))
             else:
                 log_probs = self.server_model(data)
             # sum up batch loss

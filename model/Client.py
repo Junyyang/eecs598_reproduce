@@ -52,10 +52,15 @@ class Client:
 
 
     # get gradients and sketch matrix S from server
-    def get_paras(self, paras, hash_idxs, rand_sgns):
+    # for gaussian sketch, one needs to pass in sketch_matrices
+    # for count sketch, one only needs to pass in hash indices and rnadom signs of the count sketch matrix
+    def get_paras(self, paras, hash_idxs, rand_sgns, sketch_matrices=None):
         if self.args.model_type == 'MLP_SketchLinear' or self.args.model_type == 'CNN_sketch':
-            self.hash_idxs = hash_idxs
-            self.rand_sgns = rand_sgns
+            if self.args.sketchtype == "gaussian":
+                self.sketch_matrices = sketch_matrices
+            else:
+                self.hash_idxs = hash_idxs
+                self.rand_sgns = rand_sgns
             self.prev_paras = paras
             self.model.load_state_dict(paras)
         else:
@@ -95,7 +100,10 @@ class Client:
                 optimizer.zero_grad()
                 images, labels = images.to(self.args.device), labels.to(self.args.device)
                 if self.args.model_type == 'MLP_SketchLinear' or self.args.model_type == 'CNN_sketch':
-                    log_probs = self.model(images, self.hash_idxs, self.rand_sgns)
+                    if self.args.sketchtype == 'gaussian':
+                        log_probs = self.model(images, sketchmats=self.sketch_matrices)
+                    else:
+                        log_probs = self.model(images, self.hash_idxs, self.rand_sgns)
                 else:
                     log_probs = self.model(images)
                 loss = self.loss_func(log_probs, labels)

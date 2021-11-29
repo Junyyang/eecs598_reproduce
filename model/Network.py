@@ -3,7 +3,11 @@ from torch import nn
 import torch.nn.functional as F
 from model.SketchLinear import SketchLinear
 from model.SketchConv import SketchConv
+from conf import Args
 
+args = Args()
+
+#device = args.device
 # Multilayer perceptron
 # Args:
     #    dim_in: input dimension
@@ -59,12 +63,19 @@ class MLP_SketchLinear(nn.Module):
         self.output_layer = nn.Linear(self.hidden[-1], dim_out)
         self.log_softmax = nn.LogSoftmax(dim = 1)
 
-    def forward(self, x, hash_idxs, rand_sgns):
+    def forward(self, x, hash_idxs=None, rand_sgns=None, sketchmats=None):
         x = x.view(-1, self.dim_in)
-        output = self.input_layer(x, hash_idxs[0], rand_sgns[0])
+        if args.sketchtype == 'count':
+            output = self.input_layer(x, hash_idxs[0], rand_sgns[0])
+        else:
+            output = self.input_layer(x,sketchmats[0])
         output = self.activation(output)
         for i, hidden_layers in enumerate(self.hidden_layers, start=1):
-            output = hidden_layers(output, hash_idxs[i], rand_sgns[i])
+            if args.sketchtype == 'count':
+                output = hidden_layers(output, hash_idxs[i], rand_sgns[i])
+            else:
+                output = hidden_layers(output, sketchmats[i])
+
         output = self.activation(output)
         output = self.output_layer(output)
         output = self.log_softmax(output)
@@ -100,13 +111,21 @@ class CNNMnist_Sketch(nn.Module):
         self.fc1 = SketchLinear(1024, 512, q=q)
         self.fc2 = nn.Linear(512, 10)
 
-    def forward(self, x, hash_idxs, rand_sgns):
-        x = F.relu(F.max_pool2d(self.conv1(x, hash_idxs[0], rand_sgns[0]), 2))
-        x = F.relu(F.max_pool2d(self.conv2(x, hash_idxs[1], rand_sgns[1]), 2))
-        # print(x.shape)
-        x = x.reshape(-1, x.shape[1] * x.shape[2] * x.shape[3])
-        # x = x.view(-1, x.shape[1] * x.shape[2] * x.shape[3])
-        x = F.relu(self.fc1(x, hash_idxs[2], rand_sgns[2]))
+    def forward(self, x, hash_idxs=None, rand_sgns=None, sketchmats=None):
+        if args.sketchtype == 'count':
+            x = F.relu(F.max_pool2d(self.conv1(x, hash_idxs[0], rand_sgns[0]), 2))
+            x = F.relu(F.max_pool2d(self.conv2(x, hash_idxs[1], rand_sgns[1]), 2))
+            # print(x.shape)
+            x = x.reshape(-1, x.shape[1] * x.shape[2] * x.shape[3])
+            # x = x.view(-1, x.shape[1] * x.shape[2] * x.shape[3])
+            x = F.relu(self.fc1(x, hash_idxs[2], rand_sgns[2]))
+        else:
+            x = F.relu(F.max_pool2d(self.conv1(x, sketchmat=sketchmats[0]), 2))
+            x = F.relu(F.max_pool2d(self.conv2(x, sketchmat=sketchmats[1]), 2))
+            # print(x.shape)
+            x = x.reshape(-1, x.shape[1] * x.shape[2] * x.shape[3])
+            # x = x.view(-1, x.shape[1] * x.shape[2] * x.shape[3])
+            x = F.relu(self.fc1(x, sketchmat=sketchmats[2]))
         x = self.fc2(x)
         return F.log_softmax(x, dim=1)
 
@@ -157,19 +176,31 @@ class CNNCifar_Sketch(nn.Module):
         self.fc1 = SketchLinear(2048, 200, q=self.q)
         self.fc2 = SketchLinear(200, num_classes, q=q)
 
-    def forward(self, x, hash_idxs, rand_sgns):
+    def forward(self, x, hash_idxs=None, rand_sgns=None, sketchmats=None):
         x = self.conv1(x)
         x = F.relu(x)
-        x = self.conv2(x, hash_idxs[0], rand_sgns[0])
-        x = F.relu(x)
-        x = self.pool2(x)
-        x = self.conv3(x, hash_idxs[1], rand_sgns[1])
-        x = F.relu(x)
-        x = self.pool2(x)
-        x = x.reshape(x.size(0), -1)
-        x = self.fc1(x, hash_idxs[2], rand_sgns[2])
-        x = F.relu(x)
-        x = self.fc2(x, hash_idxs[3], rand_sgns[3])
+        if args.sketchtype == 'count':
+            x = self.conv2(x, hash_idxs[0], rand_sgns[0])
+            x = F.relu(x)
+            x = self.pool2(x)
+            x = self.conv3(x, hash_idxs[1], rand_sgns[1])
+            x = F.relu(x)
+            x = self.pool2(x)
+            x = x.reshape(x.size(0), -1)
+            x = self.fc1(x, hash_idxs[2], rand_sgns[2])
+            x = F.relu(x)
+            x = self.fc2(x, hash_idxs[3], rand_sgns[3])
+        else:
+            x = self.conv2(x, sketchmat=sketchmats[0])
+            x = F.relu(x)
+            x = self.pool2(x)
+            x = self.conv3(x, sketchmat=sketchmats[1])
+            x = F.relu(x)
+            x = self.pool2(x)
+            x = x.reshape(x.size(0), -1)
+            x = self.fc1(x, sketchmat=sketchmats[2])
+            x = F.relu(x)
+            x = self.fc2(x, sketchmat=sketchmats[3])
         x = F.log_softmax(x, dim=1)
         return x
 

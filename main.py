@@ -14,11 +14,14 @@ from utils import load_mnist, sample_iid, load_cifar, load_LFW
 from conf import Args
 
 if __name__ == "__main__":
-    old_args = Args()
+    args = Args()
 
+    '''
+    
     parser = argparse.ArgumentParser(description='Sketching')
     parser.add_argument('--model_type', type=str, default="CNN")
     parser.add_argument('--datatype', type=str, default="cifar")
+    parser.add_argument('--sketchtype', type=str, default="count")
     parser.add_argument('--round', type=int, default=500)
     parser.add_argument('--savingmodel', type=int, default=0)
 
@@ -26,7 +29,7 @@ if __name__ == "__main__":
     for ki in old_args.keys():
         if not (ki in args.keys()):
             args[ki] = old_args[ki]
-   
+    '''
 
     if not os.path.exists('data/results'):
         os.makedirs('data/results')

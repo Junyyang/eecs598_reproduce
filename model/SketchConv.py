@@ -16,7 +16,7 @@ device = args.device
 
 class SketchConvFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input, weight, bias, k, hash_idx, rand_sgn, training=True, q=2):
+    def forward(ctx, input, weight, bias, k, hash_idx=None, rand_sgn=None, training=True, q=2, sketchmat=None):
         '''
         Args:
             input: shape=(b, c0, w0, h0)
@@ -41,17 +41,27 @@ class SketchConvFunction(torch.autograd.Function):
         # input tensor (b, c0, w0, h0) to patches (b*w1*h1, k*k*c0)
         fan_in = k * k * c0
         x = nn.functional.unfold(input, (k, k)).transpose(1, 2).reshape(b * w1 * h1, fan_in)
-
+        
         if training:
             # sketching the input and weight matrices
-            # hash_idx, rand_sgn = Sketch.rand_hashing(fan_in, q)
-            x_sketch = Sketch.countsketch(x.to(device), hash_idx, rand_sgn).to(device)
-            weight_sketch = Sketch.countsketch(weight.to(device), hash_idx, rand_sgn).to(device)
-            z = x_sketch.matmul(weight_sketch.t())  # shape=(b*w1*h1, c1)
+            # count sketch
+            if args.sketchtype == 'count':
+                # hash_idx, rand_sgn = Sketch.rand_hashing(fan_in, q)
+                x_sketch = Sketch.countsketch(x.to(device), hash_idx, rand_sgn).to(device)
+                weight_sketch = Sketch.countsketch(weight.to(device), hash_idx, rand_sgn).to(device)
+                z = x_sketch.matmul(weight_sketch.t())  # shape=(b*w1*h1, c1)
 
-            # save for backprop
-            shapes = torch.IntTensor([k, b, c0, w0, h0, c1, w1, h1])
-            ctx.save_for_backward(x_sketch, weight_sketch, bias, shapes, hash_idx, rand_sgn)
+                # save for backprop
+                shapes = torch.IntTensor([k, b, c0, w0, h0, c1, w1, h1])
+                ctx.save_for_backward(x_sketch, weight_sketch, bias, shapes, hash_idx, rand_sgn)
+            elif args.sketchtype == 'gaussian':
+                x_sketch = Sketch.gaussiansketch(x.to(device), sketchmat).to(device)
+                weight_sketch = Sketch.gaussiansketch(weight.to(device), sketchmat).to(device)
+                z = x_sketch.matmul(weight_sketch.t())  # shape=(b*w1*h1, c1)
+
+                # save for backprop
+                shapes = torch.IntTensor([k, b, c0, w0, h0, c1, w1, h1])
+                ctx.save_for_backward(x_sketch, weight_sketch, bias, shapes, sketchmat)
         else:
             # the multiplication of x and w transpose
             z = x.matmul(weight.t())  # shape=(b*w1*h1, c1)
@@ -65,7 +75,10 @@ class SketchConvFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        x_sketch, weight_sketch, bias, shapes, hash_idx, rand_sgn = ctx.saved_tensors
+        if args.sketchtype == 'gaussian':
+            x_sketch, weight_sketch, bias, shapes, sketchmat = ctx.saved_tensors
+        else:
+            x_sketch, weight_sketch, bias, shapes, hash_idx, rand_sgn = ctx.saved_tensors
         grad_input = grad_weight = grad_bias = None
         k, b, c0, w0, h0, c1, w1, h1 = shapes
 
@@ -74,22 +87,29 @@ class SketchConvFunction(torch.autograd.Function):
 
         if ctx.needs_input_grad[0]:
             grad_x0 = grad_output1.matmul(weight_sketch.to(device))  # shape=(b*w1*h1, s)
-            grad_x1 = Sketch.transpose_countsketch(grad_x0.to(device), hash_idx, rand_sgn).to(
-                device)  # shape=(b*w1*h1, c0*k*k)
+            if args.sketchtype == 'gaussian':
+                grad_x1 = Sketch.transpose_gaussiansketch(grad_x0.to(device), sketchmat).to(
+                device)
+            else:
+                grad_x1 = Sketch.transpose_countsketch(grad_x0.to(device), hash_idx, rand_sgn).to(
+                    device)  # shape=(b*w1*h1, c0*k*k)
             grad_x2 = grad_x1.reshape(b, w1 * h1, c0 * k * k).transpose(1, 2)
             grad_input = nn.functional.fold(grad_x2, (w0, h0), (k, k))  # shape=(b, c0, w0, h0)
         if ctx.needs_input_grad[1]:
             grad_w_sketch = grad_output1.t().matmul(x_sketch.to(device))  # shape=(c1, s)
-            grad_weight = Sketch.transpose_countsketch(grad_w_sketch.to(device), hash_idx,
+            if args.sketchtype == 'gaussian':
+                grad_weight = Sketch.transpose_gaussiansketch(grad_w_sketch.to(device), sketchmat)  # shape=(c1, c0*k*k)
+            else:
+                grad_weight = Sketch.transpose_countsketch(grad_w_sketch.to(device), hash_idx,
                                                        rand_sgn)  # shape=(c1, c0*k*k)
         if ctx.needs_input_grad[2]:
             grad_bias = grad_output1.sum(0)
 
-        return grad_input, grad_weight, grad_bias, None, None, None, None, None
+        return grad_input, grad_weight, grad_bias, None, None, None, None, None, None
 
 
 class SketchConv(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, q=2):
+    def __init__(self, in_channels, out_channels, kernel_size, q=2, sketchtype='count'):
         super(SketchConv, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -100,6 +120,7 @@ class SketchConv(nn.Module):
         self.bias = nn.Parameter(torch.Tensor(out_channels))
         self.register_parameter('weight', self.weight)
         self.register_parameter('bias', self.bias)
+        self.sketchtype = sketchtype
 
         # uniform initialization
         scaling = math.sqrt(6.0)
@@ -107,9 +128,9 @@ class SketchConv(nn.Module):
         self.weight.data.uniform_(-bound * scaling, bound * scaling)
         self.bias.data.uniform_(-bound, bound)
 
-    def forward(self, input, hash_idx, rand_sgn):
+    def forward(self, input, hash_idx=None, rand_sgn=None, sketchmat=None):
         return SketchConvFunction.apply(input, self.weight, self.bias, self.kernel_size, hash_idx, rand_sgn,
-                                        self.training, self.q)
+                                        self.training, self.q, sketchmat)
 
     def extra_repr(self):
         return 'in_channels={}, out_channels={}, kernel_size={}, weight={}, bias={}'.format(

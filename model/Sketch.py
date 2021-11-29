@@ -26,6 +26,10 @@ class Sketch():
         hash_idx = t[0:(s*q)].reshape((q, s))
         rand_sgn = torch.randint(0, 2, (n,)).float() * 2 - 1
         return hash_idx.to(device), rand_sgn.to(device)
+
+    def gaussian_sketch_matrices(n, q):
+        s = math.floor(n / q)
+        return (torch.randn(n, s)/math.sqrt(0.+s)).to(device)
     
     # Count sketch 
     # It converts m-by-n matrix to m-by-s matrix
@@ -47,6 +51,19 @@ class Sketch():
         #     c[:, h] = torch.sum(b[:, selected], dim=1)
 
         return c
+    # Gaussian sketch  
+    # It converts m-by-n matrix to m-by-s matrix
+    # Args:
+    #    a: (m-by-n Torch Tensor) input matrix 
+    #    sketchmat: (n-by-s Torch Tensor) gaussian sketch matrix
+    # Return:
+    #    c: m-by-s sketch (Torch Tensor) (result of count sketch)
+    def gaussiansketch(a, sketchmat):
+        #print('gaussian sketch')
+        #print(a.shape)
+        #print(sketchmat.shape)
+        return torch.matmul(a, sketchmat)
+        #return a.mul(sketchmat)
     
     
     # Transpose count sketch 
@@ -71,4 +88,17 @@ class Sketch():
         #     b[:, selected] = c[:, h].reshape(m, 1)
         b = b.mul(rand_sgn)
         return b
-    
+
+    # Transpose gaussian sketch 
+    # The "countsketch" function converts m-by-n matrix A to m-by-s matrix C
+    # This function maps C back to a m-by-n matrix B
+    # Args:
+    #    c: (m-by-s Torch Tensor) input matrix
+    #    sketchmat: (n-by-s Torch Tensor) gaussian sketch matrix
+    # Return:
+    #    b: m-by-n matrix such that A B = C C^T (B = C S^T)
+    def transpose_gaussiansketch(c, sketchmat):
+        #return c.mul(torch.t(sketchmat))  
+        return torch.matmul(c, torch.t(sketchmat)) 
+
+    # E[SS^T] = I 
