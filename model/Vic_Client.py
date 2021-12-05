@@ -6,7 +6,9 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from model.Network import NN, MLP_SketchLinear, CNNCifar, CNNMnist, CNNCifar_Sketch, CNNMnist_Sketch
 
+from conf import Args
 
+args = Args()
 class DatasetSplit(Dataset):
     def __init__(self, dataset, idx):
         self.dataset = dataset
@@ -20,7 +22,7 @@ class DatasetSplit(Dataset):
         return image, label
 
 
-class Client:
+class VicClient:
     def __init__(self, data, idx, args):
         self.idx = idx
         self.args = args
@@ -50,10 +52,10 @@ class Client:
         elif self.args.model_type == 'CNN_sketch' and self.args.datatype == 'LFW':
             self.model = CNNCifar_Sketch(num_classes = 2).to(self.args.device)
 
-
     # get gradients and sketch matrix S from server
     # for gaussian sketch, one needs to pass in sketch_matrices
     # for count sketch, one only needs to pass in hash indices and rnadom signs of the count sketch matrix
+    
     def get_paras(self, paras, hash_idxs, rand_sgns, sketch_matrices=None):
         if self.args.model_type == 'MLP_SketchLinear' or self.args.model_type == 'CNN_sketch':
             if self.args.sketchtype == "gaussian":
@@ -66,6 +68,10 @@ class Client:
         else:
             self.prev_paras = paras
             self.model.load_state_dict(paras)
+    
+    # get average updates from server avg_up = (up1 + up2)/2
+    def get_avg_updates(self, avg_update):
+            self.broadcasted_update = avg_update  # avg_updates from server
 
     def adjust_learning_rate(self, optimizer, epoch, step):
         """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
@@ -77,6 +83,21 @@ class Client:
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
 
+    # every client sends gradients to server after training on local data for several epochs
+    # rather than send the gradients, it actually send the updates
+    def send_grads(self):
+        current_grad = dict()
+        current_paras = self.model.state_dict()
+        for k in current_paras.keys():
+            current_grad[k] = current_paras[k] - self.prev_paras[k]
+        return current_grad
+
+    def send_paras(self):
+        return copy.deepcopy(self.model.state_dict())
+
+    def size(self):
+        return len(self.idx)
+
     # local training for each client
     # optimizer: Adam
     def train(self, current_round):
@@ -86,16 +107,23 @@ class Client:
         epoch_losses = list()
         epoch_acces = list()
 
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.args.learningrate_client)
+        if args.attack == 1:
+            optimizer = torch.optim.SGD(self.model.parameters(), momentum=0, lr=self.args.learningrate_client)
+        else:
+            optimizer = torch.optim.Adam(self.model.parameters(), lr=self.args.learningrate_client)
         scheduler = CosineAnnealingLR(optimizer, T_max=10, eta_min=1e-5)
         # scheduler = ExponentialLR(optimizer, 0.9, last_epoch=-1)
 
+        print("")
+        print("======================")
         for iter in range(self.args.local_epochs):
-            print('    local epoch', iter)
+            print('    Victim client local epoch', iter)
             l_sum = 0.0
             correct = 0.0
             # batch_loss = []
             for batch_idx, (images, labels) in enumerate(self.ldr_train):
+                if args.attack==1 and batch_idx >0: 
+                    break
 
                 optimizer.zero_grad()
                 images, labels = images.to(self.args.device), labels.to(self.args.device)
@@ -105,6 +133,7 @@ class Client:
                     else:
                         log_probs = self.model(images, self.hash_idxs, self.rand_sgns)
                 else:
+                    # CNN model
                     log_probs = self.model(images)
                 loss = self.loss_func(log_probs, labels)
                 loss.backward()
@@ -122,18 +151,4 @@ class Client:
             epoch_acces.append(epoch_acc)
         return sum(epoch_losses) / len(epoch_losses), sum(epoch_acces) / len(epoch_acces)
 
-    # every client sends gradients to server after training on local data for several epochs
-    # rather than send the gradients, it actually send the updates
-    def send_grads(self):
-        current_grad = dict()
-        current_paras = self.model.state_dict()
-        for k in current_paras.keys():
-            current_grad[k] = current_paras[k] - self.prev_paras[k]
-        return current_grad
-
-    def send_paras(self):
-        return copy.deepcopy(self.model.state_dict())
-
-    def size(self):
-        return len(self.idx)
 

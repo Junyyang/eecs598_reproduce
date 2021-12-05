@@ -11,12 +11,15 @@ from .Sketch import Sketch
 from model.Network import NN, MLP_SketchLinear, CNNCifar, CNNMnist, CNNMnist_Sketch, CNNCifar_Sketch
 
 
-class Server:
+# attacked server
+class Server_att:
     # build a server
     # broadcast parameters and sketch matrix S to clients
     # aggregate parameters collected from clients
     # update model parameters
     # test the global model after each communication round
+
+    # only two clients are added: vic_client, adv_client
 
     def __init__(self, clients, test_data, args, attack = False):
         self.args = args
@@ -63,54 +66,8 @@ class Server:
             self.sizes = self.server_model.weight_sizes()
             #print(self.sizes)
         #assert False
-
-
-
-    # randomly select some clients for training in each communication rounds
-    # broadcast global_weights and sketch matrix to all selected clients
-    def broadcast(self):
-        # randomly generate sketch matrix in a communication round
-        # CNN_sketch: CNN with sketch
-        if self.args.model_type == 'MLP_SketchLinear' or self.args.model_type == 'CNN_sketch':
-            if self.args.sketchtype == 'gaussian':
-                sketch_matrices = [Sketch.gaussian_sketch_matrices(size, q=self.args.p) for size in self.sizes]
-                #print(self.sizes)
-                #for fm in sketch_matrices:
-                #    print(fm.shape)
-                #assert False
-                # attack is false
-                num_client = int(len(self.clients) * self.args.sample_rate)
-                # select working client in a round
-                self.working_client = np.random.choice(len(self.clients), num_client, replace=False)
-                for client_id in self.working_client:
-                    self.clients[client_id].get_paras(copy.deepcopy(self.global_weights), None, None, sketch_matrices)
-                return sketch_matrices
-            else:
-                hash_idxs = []
-                rand_sgns = []
-                for size in self.sizes:
-                    hash_idx, rand_sgn = Sketch.rand_hashing(size, q=self.args.p)
-                    hash_idxs.append(hash_idx)
-                    rand_sgns.append(rand_sgn)
-                # select working client in a round
-                # attack is false
-                num_client = int(len(self.clients) * self.args.sample_rate)
-                self.working_client = np.random.choice(len(self.clients), num_client, replace=False)
-                for client_id in self.working_client:
-                    self.clients[client_id].get_paras(copy.deepcopy(self.global_weights), hash_idxs, rand_sgns)
-                return hash_idxs, rand_sgns
-
-        # args.model_type = CNN: standard CNN NN: multilayer perceptron 
-        else: 
-            # attack is false
-            num_client = int(len(self.clients) * self.args.sample_rate) # random sample clients, num = total_num * rate
-            self.working_client = np.random.choice(len(self.clients), num_client, replace=False)
-            # self.working_client = [0]
-            for client_id in self.working_client:
-                self.clients[client_id].get_paras(copy.deepcopy(self.global_weights), None, None) # self.model.load_state_dict(paras)
-        
                     
-    # collect local gradients from the selected clients in each communicaiton rounds
+    # collect local updates from the selected clients in each communicaiton rounds
     def get_grads(self):
         self.local_grads = [self.clients[client_id].send_grads() for client_id in self.working_client]
 
@@ -137,6 +94,63 @@ class Server:
         for k in g_avg.keys():
             self.global_weights[k] = self.global_weights[k] + g_avg[k]  # W_new = W_old - update_avg
         self.server_model.load_state_dict(self.global_weights)
+        
+        
+    # randomly select some clients for training in each communication rounds   
+    # broadcast global_weights and sketch matrix to all selected clients
+    def broadcast(self):
+        # randomly generate sketch matrix in a communication round
+        # CNN_sketch: CNN with sketch
+        if self.args.model_type == 'MLP_SketchLinear' or self.args.model_type == 'CNN_sketch':
+            if self.args.sketchtype == 'gaussian':
+                sketch_matrices = [Sketch.gaussian_sketch_matrices(size, q=self.args.p) for size in self.sizes]
+                num_client = 2
+                self.working_client = np.asarray([])
+                for client_id in range(num_client):
+                    # send global_weights to clients -> client.prev_paras
+                    global_w = copy.deepcopy(self.global_weights)
+                    self.clients[client_id].get_paras(global_w, None, None, sketch_matrices)
+                # for client_id in range(num_client):
+                #     # get average update from clients
+                #     self.get_grads()  # Update parameter W; get self.local_grads from clients
+                #     avg_update = copy.deepcopy(self.average_grads())  # average updates with local_grads
+                #     self.clients[client_id].get_avg_updates(avg_update)
+                return sketch_matrices
+            else:
+                # hash sketch method
+                hash_idxs = []
+                rand_sgns = []
+                for size in self.sizes:
+                    hash_idx, rand_sgn = Sketch.rand_hashing(size, q=self.args.p)
+                    hash_idxs.append(hash_idx)
+                    rand_sgns.append(rand_sgn)
+
+                num_client = 2
+                self.working_client = np.asarray([0,1])
+                for client_id in self.working_client:
+                    # send global_weights to clients -> client.prev_paras
+                    global_w = copy.deepcopy(self.global_weights)
+                    self.clients[client_id].get_paras(global_w, hash_idxs, rand_sgns)
+                # for client_id in range(num_client):
+                #     # get average update from clients
+                #     self.get_grads()  # Update parameter W; get self.local_grads from clients
+                #     avg_update = copy.deepcopy(self.average_grads())  # average updates with local_grads
+                #     self.clients[client_id].get_avg_updates(avg_update)
+                return hash_idxs, rand_sgns
+
+        # args.model_type = CNN: standard CNN NN: multilayer perceptron 
+        else: 
+            num_client = 2
+            self.working_client = np.asarray([0,1])
+            for client_id in self.working_client:
+                # send global_weights to clients -> client.prev_paras
+                global_w = copy.deepcopy(self.global_weights)
+                self.clients[client_id].get_paras(global_w, None, None)
+            # for client_id in range(num_client):
+            #     # get average update from clients
+            #     self.get_grads()  # Update parameter W; get self.local_grads from clients
+            #     avg_update = copy.deepcopy(self.average_grads())  # average updates with local_grads
+            #     self.clients[client_id].get_avg_updates(avg_update)
 
     def w_err_server(self, w_old, w_new, hash_idxs_old, rand_sgns_old):
         err = 0
@@ -237,10 +251,14 @@ class Server:
             if self.args.model_type == 'MLP_SketchLinear' or self.args.model_type == 'CNN_sketch':
                 w_new = copy.deepcopy(self.global_weights)
                 hash_idxs_new, rand_sgns_new, sketch_matrices_new = None, None, None
+                
+                # Broad cast from server to client
                 if self.args.sketchtype == 'count':
-                    hash_idxs_new, rand_sgns_new = self.broadcast()
+                    # 1. broadcast send global_weights and avg_update to clients
+                    hash_idxs_new, rand_sgns_new = self.broadcast() 
                 else:
                     sketch_matrices_new = self.broadcast()
+                # error calculate
                 if i >= 1:
                     w_error, w_err_scale, w_err_cosine = self.w_err_client(w_old, w_new, hash_idxs_old, rand_sgns_old, sketch_matrices_old, hash_idxs_new, rand_sgns_new, sketch_matrices_new)
                     # w_error_server = self.w_err_server(w_old, w_new, hash_idxs_old, rand_sgns_old)
@@ -256,10 +274,11 @@ class Server:
                 hash_idxs_old, rand_sgns_old, sketch_matrices_old = hash_idxs_new, rand_sgns_new, sketch_matrices_new
 
                 for client_id in self.working_client:
-                    ### print('client', client_id)  # cancel print client
                     client = self.clients[client_id]
-                    train_loss, train_acc = client.train(i)
-                    ### print('client', client_id, ' -- ', 'train loss:', train_loss, 'train_acc:', train_acc)  # cancel print client
+                    #2. training the clients
+                    train_loss, train_acc = client.train(i)  
+
+                # 3. update global_weights by gathering updates from clients
                 self.update_paras()  # get grads, avg, W_new = W_old - delta_avg
                 acc_test, test_loss = self.test()
                 accs.append(acc_test)
@@ -314,10 +333,12 @@ class Server:
                         +'_p_'+str(self.args.p)+'__'+self.args.runner, 'w').writelines(losses)
                     print('Round {:3d}, Average loss {:.4f}'.format(i, test_loss))
                     break
+
+            # attacking part does not need saving models
             # save model
-            model_path = 'data/saved_models/model_' + self.args.model_type + self.args.datatype + '_lr_' + str(
-                        self.args.sample_rate) + 'target_acc_' + str(self.args.target) + '_sketch_type_' + self.args.sketchtype +'_p_'+str(self.args.p)+'__'+self.args.runner
-            torch.save(self.global_weights, model_path)
+            # model_path = 'data/saved_models/model_' + self.args.model_type + self.args.datatype + '_lr_' + str(
+            #             self.args.sample_rate) + 'target_acc_' + str(self.args.target) + '_sketch_type_' + self.args.sketchtype +'_p_'+str(self.args.p)+'__'+self.args.runner
+            # torch.save(self.global_weights, model_path)
 
     # test the trained model with test data
     def test(self):

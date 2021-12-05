@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from torch._C import StringType
 import torch.nn.functional as F
 from model.SketchLinear import SketchLinear
 from model.SketchConv import SketchConv
@@ -177,6 +178,8 @@ class CNNCifar_Sketch(nn.Module):
         self.fc2 = SketchLinear(200, num_classes, q=q)
 
     def forward(self, x, hash_idxs=None, rand_sgns=None, sketchmats=None):
+        #print("sketchmat "+str(sketchmats[0].cpu()))
+        # print(x.shape)
         x = self.conv1(x)
         x = F.relu(x)
         if args.sketchtype == 'count':
