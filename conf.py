@@ -33,9 +33,10 @@ class Args:
         self.number_client = 100
         self.model_type = 'CNN'
         # self.model_type = 'CNN_sketch'
-        self.runner = 'naichen'
+        self.runner = 'hessa'
         self.datatype = 'cifar'
         self.sketchtype = 'gaussian' # options are count and gaussian
+        # self.sketchtype = 'count'
         self.attack = 0
         self.dim_in = 784
         self.dim_out = 10

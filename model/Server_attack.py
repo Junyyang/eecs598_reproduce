@@ -73,6 +73,9 @@ class Server_att:
 
     # compute th_averagee average of the collected gradients
     def _average(self, x):
+
+        print("self.working_client", self.working_client)
+
         total_data_number = sum(self.clients_data_numbers[self.working_client])
         x_avg = copy.deepcopy(x[0])
         for k in x_avg.keys():
@@ -105,7 +108,7 @@ class Server_att:
             if self.args.sketchtype == 'gaussian':
                 sketch_matrices = [Sketch.gaussian_sketch_matrices(size, q=self.args.p) for size in self.sizes]
                 num_client = 2
-                self.working_client = np.asarray([])
+                self.working_client = np.asarray([0,1])
                 for client_id in range(num_client):
                     # send global_weights to clients -> client.prev_paras
                     global_w = copy.deepcopy(self.global_weights)

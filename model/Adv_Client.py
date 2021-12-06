@@ -3,6 +3,7 @@ import copy
 from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
+from .Sketch import Sketch
 
 import torch
 import torch.nn as nn
@@ -51,18 +52,19 @@ class AdvClient:
             self.model = CNNMnist().to(self.args.device)
         elif self.args.model_type == 'CNN' and self.args.datatype == 'cifar':
             self.model = CNNCifar().to(self.args.device)
-
         elif self.args.model_type == 'CNN' and self.args.datatype == 'LFW':
             self.model = CNNCifar(num_classes = 2).to(self.args.device)
 
         # model == CNN_Sketch
         elif self.args.model_type == 'CNN_sketch' and self.args.datatype == 'mnist':
             self.model = CNNMnist_Sketch(self.args.p).to(self.args.device)
+            self.dummy_model = CNNMnist().to(self.args.device)
         elif self.args.model_type == 'CNN_sketch' and self.args.datatype == 'cifar':
             self.model = CNNCifar_Sketch(self.args.p).to(self.args.device)
-        
+            self.dummy_model = CNNCifar().to(self.args.device)
         elif self.args.model_type == 'CNN_sketch' and self.args.datatype == 'LFW':
             self.model = CNNCifar_Sketch(num_classes = 2).to(self.args.device)
+            self.dummy_model = CNNCifar(num_classes = 2).to(self.args.device)
 
         self.weight_t_1 = copy.deepcopy(self.model.state_dict())
         self.trained_weight_t_1 = copy.deepcopy(self.model.state_dict())
@@ -80,11 +82,27 @@ class AdvClient:
                 self.rand_sgns = rand_sgns
             self.weight_t_1 = self.prev_paras
             self.prev_paras = paras  # W_0
+
+            # print("Parameters of model", self.args.model_type)
+            # for k in paras.keys():
+            #     print(k, paras[k].shape)
+
             self.model.load_state_dict(paras)
+            # !!!!!!!!! the shape of weights is not the same
+            dummy_dict = dict()
+            dummy_state_dict = self.dummy_model.state_dict()
+            for k in dummy_state_dict:
+                dummy_dict[k] = torch.reshape(paras[k], dummy_state_dict[k].shape)
+            self.dummy_model.load_state_dict(dummy_dict)
         else:            
             self.weight_t_1 = self.prev_paras
             self.prev_paras = paras
             self.model.load_state_dict(paras)
+
+            print("Parameters of model", self.args.model_type)
+            for k in paras.keys():
+                print(k, paras[k].shape)
+            
     
     # # get average updates from server avg_up = (up1 + up2)/2
     # def get_avg_updates(self, avg_update):
@@ -124,6 +142,49 @@ class AdvClient:
     def criterion(self, pred, target):
         return torch.mean(torch.sum(- target * F.log_softmax(pred, dim=-1), 1))
 
+    # get the gradient of victim client: lambda_W
+    def get_lambda_W(self):
+        lambda_W = dict()
+        i = 0
+        for k_idx, k in enumerate(self.prev_paras.keys()):
+            # self.model_type = 'CNN'
+            if not "sketch" in self.args.model_type :
+                lambda_W[k] = -(2*self.prev_paras[k] - self.trained_weight_t_1[k] - \
+                    self.weight_t_1[k]) / self.args.learningrate_client/ self.args.local_epochs
+            # sketeched model CNN_sketch
+
+            # !!!!!! what if the len(layer weights shape) is greater than 2, like [32, 3, 5, 5]
+
+            else: 
+                w_vic = 2*self.prev_paras[k] - self.trained_weight_t_1[k]
+                w_avg = self.weight_t_1[k]
+                # print(k, "w_vic.shape", w_vic.shape)
+                # print(k, "w_avg.shape", w_avg.shape)
+                # the first layer weight shape is conv1.weight w_avg.shape torch.Size([32, 3, 5, 5])
+                if not len(w_vic.shape) == 2:
+                    lambda_W[k] = -(w_vic - w_avg)/ self.args.learningrate_client/ self.args.local_epochs
+                # !!!!!!!!!!!!!! only sketch when the weight shape is [_,_]
+                elif len(w_vic.shape) == 2:
+                    if self.args.sketchtype == 'count':
+                        w_vic_sketch = Sketch.countsketch(w_vic, self.hash_idxs[i], self.rand_sgns[i]) # @ S_new
+                        w_vic_sketch = Sketch.transpose_countsketch(w_vic_sketch, self.hash_idxs[i], self.rand_sgns[i]) # @ S_new.T
+
+                        w_avg_sketch = Sketch.countsketch(w_avg, self.hash_idxs_old[i], self.rand_sgns_old[i]) # @ S_old
+                        w_avg_sketch = Sketch.transpose_countsketch(w_avg_sketch, self.hash_idxs_old[i], self.rand_sgns_old[i]) # @ S_old.T
+                        
+                    else:
+                        # gaussian sketch
+                        w_vic_sketch = Sketch.gaussiansketch(w_vic, self.sketch_matrices[i]) # @ S_new
+                        w_vic_sketch = Sketch.transpose_gaussiansketch(w_vic_sketch, self.sketch_matrices[i]) # @ S_new.T
+
+                        w_avg_sketch = Sketch.gaussiansketch(w_avg, self.sketch_matrices_old[i]) # @ S_old
+                        w_avg_sketch = Sketch.transpose_gaussiansketch(w_avg_sketch, self.sketch_matrices_old[i]) # @ S_old.T
+                    i += 1
+                    lambda_W[k] = -(w_vic_sketch - w_avg_sketch)/ self.args.learningrate_client/ self.args.local_epochs
+                else:
+                    continue
+        return lambda_W
+
     # local training for each client
     # optimizer: Adam
     def train(self, current_round):
@@ -152,7 +213,7 @@ class AdvClient:
             correct = 0.0
             # batch_loss = []
             for batch_idx, (images, labels) in enumerate(self.ldr_train):
-                if args.attack==1 and batch_idx >0: 
+                if args.attack==1 and batch_idx > 0: 
                     break
                 
                 optimizer_1.zero_grad()
@@ -161,13 +222,13 @@ class AdvClient:
                 # TODO dealing with the sketched model
                 # Predict
                 # ========================================
+                # Predict sketch
                 if self.args.model_type == 'MLP_SketchLinear' or self.args.model_type == 'CNN_sketch':
                     if self.args.sketchtype == 'gaussian':
                         log_probs = self.model(images, sketchmats=self.sketch_matrices)
                     else:
                         log_probs = self.model(images, self.hash_idxs, self.rand_sgns)
-
-                # FIRST DEAL WITH NON SKETCHED
+                # Predict non-sketch
                 else:
                     log_probs = self.model(images)
                 # ========================================
@@ -186,11 +247,11 @@ class AdvClient:
                     dummy_images = dummy_image.repeat(self.args.local_batch_size, 1, 1, 1).to(self.args.device).requires_grad_(True)
                     dummy_labels = dummy_label.repeat(self.args.local_batch_size, 1).to(self.args.device).requires_grad_(True)
 
-                    lambda_W = dict()
-                    for k in self.prev_paras.keys():
-                        lambda_W[k] = -(2*self.prev_paras[k] - self.trained_weight_t_1[k] - self.weight_t_1[k]) / self.args.learningrate_client/ self.args.local_epochs
+
+                    lambda_W = self.get_lambda_W()                      
 
                     history = []
+                    loss_list = []
                     step_size = 30
                     total_iter = 300
 
@@ -202,15 +263,32 @@ class AdvClient:
                             optimizer.zero_grad()
 
                             # compute gradient from dummy data and label
-                            # model = CNN_sketch or CNN
-                            dummy_preds = self.model(dummy_images)   # F(x_dum, Wt) torch.Size([50, 10]) float
+                            # nonsketch model
+                            if not "sketch" in self.args.model_type:
+                                dummy_preds = self.model(dummy_images)   # F(x_dum, Wt) torch.Size([50, 10]) float
+                            else: # sketeched model
+                                # weights reshape, then load to 
+                                dummy_preds = self.dummy_model(dummy_images)  # Using CNN model 
+                                # Using Sketch model
+                                # # !!!!!!!!! 
+                                # if self.args.sketchtype == 'gaussian':
+                                #     dummy_preds = self.model(dummy_images, sketchmats=self.sketch_matrices)
+                                # else:
+                                #     dummy_preds = self.model(dummy_images, self.hash_idxs, self.rand_sgns)
+                            
                             dummy_loss = self.criterion(dummy_preds, dummy_labels)  # loss
-                            dummy_dy_dx = torch.autograd.grad(dummy_loss, self.model.parameters(), create_graph=True) # \par Loss / \par W
+                            if 'sketch' in self.args.model_type:
+                                dummy_dy_dx = torch.autograd.grad(dummy_loss, self.dummy_model.parameters(), create_graph=True) # \par Loss / \par W
+                            else:
+                                dummy_dy_dx = torch.autograd.grad(dummy_loss, self.model.parameters(), create_graph=True) # \par Loss / \par W
                             grad_diff = 0
                             for idx, k in enumerate(lambda_W.keys()):
                                 gx = dummy_dy_dx[idx]
                                 gy = lambda_W[k]
-                                grad_diff += ((gx - gy) ** 2).sum()
+
+                                # print("gx.shape, gy.shape", gx.shape, gy.shape)
+
+                                grad_diff += ((torch.flatten(gx) - torch.flatten(gy)) ** 2).sum()
                             grad_diff.backward()
                             return grad_diff
                         
@@ -223,6 +301,7 @@ class AdvClient:
                             # Can't call numpy() on Variable that requires grad. Use var.detach().numpy() instead
                             Adv_result = dummy_images[0].cpu().permute(1, 2, 0).detach().numpy()
                             history.append(Adv_result) # tt = transforms.ToPILImage()
+                            loss_list.append(current_loss.item())
                     # adversory attack end
 
                     # save attack result
@@ -233,9 +312,15 @@ class AdvClient:
                         plt.subplot(rows, total_slices // rows, i + 1)
                         plt.imshow(history[i])
                         plt.title("batch id = %d, iter=%d" % (batch_idx, i * step_size))
-                        plt.axis('off')    
-                    plt.suptitle('Attack status' + self.args.attack + 'Model type' + self.args.model_type)
-                    save_path = './data/adv_attack_res/attacking_%d.jpg' % (batch_idx)
+                        plt.xlabel("Current Loss = %f"%( loss_list[i]))
+                        # plt.axis('off')    
+                    plt.suptitle('Attack status: %d , Model type: %s, data type: %s' % (self.args.attack, self.args.model_type, self.args.datatype))
+                    if not "sketch" in self.args.model_type:
+                        save_path = './data/adv_attack_res/%s_%s_attacking_%d_batch%d.jpg' \
+                            % (self.args.model_type, self.args.datatype, self.args.attack, batch_idx)
+                    else:
+                        save_path = './data/adv_attack_res/%s_%s_%s_attacking_%d_batch%d.jpg' \
+                            % (self.args.model_type, self.args.sketchtype, self.args.datatype, self.args.attack, batch_idx)
                     print("Successfully attacked, saved image in ", save_path)
                     plt.savefig(save_path)
                     # =============================================
@@ -245,7 +330,18 @@ class AdvClient:
                 loss.backward()
                 optimizer_1.step()
                 scheduler_1.step()
-                self.trained_weight_t_1 = copy.deepcopy(self.model.state_dict())
+                self.trained_weight_t_1 = copy.deepcopy(self.model.state_dict())  # CNN_Sketch
+
+                # save the history for the next iteration
+                if self.args.model_type == 'MLP_SketchLinear' or self.args.model_type == 'CNN_sketch':
+                    if self.args.sketchtype == "gaussian":
+                        self.sketch_matrices_old = self.sketch_matrices
+                    else:
+                        self.hash_idxs_old = self.hash_idxs
+                        self.rand_sgns_old = self.rand_sgns
+                else:
+                    continue
+
                 l_sum += loss.item()
                 pred = log_probs.data.max(1, keepdim=True)[1]
                 correct += pred.eq(labels.view_as(pred)).sum()

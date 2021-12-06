@@ -117,7 +117,7 @@ class VicClient:
         print("")
         print("======================")
         for iter in range(self.args.local_epochs):
-            print('    Victim client local epoch', iter)
+            print('Victim client local epoch', iter)
             l_sum = 0.0
             correct = 0.0
             # batch_loss = []
