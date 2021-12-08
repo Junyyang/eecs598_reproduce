@@ -249,7 +249,9 @@ class Server_att:
         accs, losses, errs_client, errs_client_scale, errs_client_cosine = [], [], [], [], []
         round = self.args.round
         w_old, hash_idxs_old, rand_sgns_old, sketch_matrices_old = None, None, None, None
-        for i in range(round):
+        
+        # round is limited to 0,1
+        for i in range(2):
             print('server round', i)
             if self.args.model_type == 'MLP_SketchLinear' or self.args.model_type == 'CNN_sketch':
                 w_new = copy.deepcopy(self.global_weights)

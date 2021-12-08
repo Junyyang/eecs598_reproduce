@@ -86,6 +86,7 @@ class MLP_SketchLinear(nn.Module):
         return [self.dim_in]+self.hidden[:-1]
 
 # CNN for mnist dataset
+# dummy_model
 class CNNMnist(nn.Module):
     def __init__(self):
         super(CNNMnist, self).__init__()

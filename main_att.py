@@ -4,7 +4,7 @@ import os
 import argparse
 import time
 
-random_seed = 6666
+random_seed = 6667
 # 6666 for horse
 #6667 for nothing
 np.random.seed(random_seed)
@@ -59,6 +59,7 @@ if __name__ == "__main__":
     print("dataset: ", args.datatype)
     print("target test accuracy: ", args.target)
     print("sketch method: ", args.sketchtype)
+    print("attack status: ", args.attack)
     print("Start Training")
     print("======================")
     print("")

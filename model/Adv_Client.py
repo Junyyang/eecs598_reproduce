@@ -99,9 +99,9 @@ class AdvClient:
             self.prev_paras = paras
             self.model.load_state_dict(paras)
 
-            print("Parameters of model", self.args.model_type)
-            for k in paras.keys():
-                print(k, paras[k].shape)
+            # print("Parameters of model", self.args.model_type)
+            # for k in paras.keys():
+            #     print(k, paras[k].shape)
             
     
     # # get average updates from server avg_up = (up1 + up2)/2
@@ -146,7 +146,8 @@ class AdvClient:
     def get_lambda_W(self):
         lambda_W = dict()
         i = 0
-        for k_idx, k in enumerate(self.prev_paras.keys()):
+        for k_idx, k in enumerate(self.prev_paras.keys()):  # global weights
+            
             # self.model_type = 'CNN'
             if not "sketch" in self.args.model_type :
                 lambda_W[k] = -(2*self.prev_paras[k] - self.trained_weight_t_1[k] - \
@@ -154,7 +155,6 @@ class AdvClient:
             # sketeched model CNN_sketch
 
             # !!!!!! what if the len(layer weights shape) is greater than 2, like [32, 3, 5, 5]
-
             else: 
                 w_vic = 2*self.prev_paras[k] - self.trained_weight_t_1[k]
                 w_avg = self.weight_t_1[k]
@@ -165,22 +165,28 @@ class AdvClient:
                     lambda_W[k] = -(w_vic - w_avg)/ self.args.learningrate_client/ self.args.local_epochs
                 # !!!!!!!!!!!!!! only sketch when the weight shape is [_,_]
                 elif len(w_vic.shape) == 2:
+
                     if self.args.sketchtype == 'count':
-                        w_vic_sketch = Sketch.countsketch(w_vic, self.hash_idxs[i], self.rand_sgns[i]) # @ S_new
-                        w_vic_sketch = Sketch.transpose_countsketch(w_vic_sketch, self.hash_idxs[i], self.rand_sgns[i]) # @ S_new.T
-
-                        w_avg_sketch = Sketch.countsketch(w_avg, self.hash_idxs_old[i], self.rand_sgns_old[i]) # @ S_old
-                        w_avg_sketch = Sketch.transpose_countsketch(w_avg_sketch, self.hash_idxs_old[i], self.rand_sgns_old[i]) # @ S_old.T
-                        
+                        lth = len(self.hash_idxs_old)
                     else:
-                        # gaussian sketch
-                        w_vic_sketch = Sketch.gaussiansketch(w_vic, self.sketch_matrices[i]) # @ S_new
-                        w_vic_sketch = Sketch.transpose_gaussiansketch(w_vic_sketch, self.sketch_matrices[i]) # @ S_new.T
+                        lth = len(self.sketch_matrices_old)
+                    if i < lth:
+                        if self.args.sketchtype == 'count':
+                            w_vic_sketch = Sketch.countsketch(w_vic, self.hash_idxs[i], self.rand_sgns[i]) # @ S_new
+                            w_vic_sketch = Sketch.transpose_countsketch(w_vic_sketch, self.hash_idxs[i], self.rand_sgns[i]) # @ S_new.T
 
-                        w_avg_sketch = Sketch.gaussiansketch(w_avg, self.sketch_matrices_old[i]) # @ S_old
-                        w_avg_sketch = Sketch.transpose_gaussiansketch(w_avg_sketch, self.sketch_matrices_old[i]) # @ S_old.T
-                    i += 1
-                    lambda_W[k] = -(w_vic_sketch - w_avg_sketch)/ self.args.learningrate_client/ self.args.local_epochs
+                            w_avg_sketch = Sketch.countsketch(w_avg, self.hash_idxs_old[i], self.rand_sgns_old[i]) # @ S_old
+                            w_avg_sketch = Sketch.transpose_countsketch(w_avg_sketch, self.hash_idxs_old[i], self.rand_sgns_old[i]) # @ S_old.T
+                            
+                        else:
+                            # gaussian sketch
+                            w_vic_sketch = Sketch.gaussiansketch(w_vic, self.sketch_matrices[i]) # @ S_new
+                            w_vic_sketch = Sketch.transpose_gaussiansketch(w_vic_sketch, self.sketch_matrices[i]) # @ S_new.T
+
+                            w_avg_sketch = Sketch.gaussiansketch(w_avg, self.sketch_matrices_old[i]) # @ S_old
+                            w_avg_sketch = Sketch.transpose_gaussiansketch(w_avg_sketch, self.sketch_matrices_old[i]) # @ S_old.T
+                        i += 1
+                        lambda_W[k] = -(w_vic_sketch - w_avg_sketch)/ self.args.learningrate_client/ self.args.local_epochs
                 else:
                     continue
         return lambda_W
@@ -281,12 +287,22 @@ class AdvClient:
                                 dummy_dy_dx = torch.autograd.grad(dummy_loss, self.dummy_model.parameters(), create_graph=True) # \par Loss / \par W
                             else:
                                 dummy_dy_dx = torch.autograd.grad(dummy_loss, self.model.parameters(), create_graph=True) # \par Loss / \par W
+
+                            print('model')
+                            for param_tensor in self.model.state_dict():
+                                print(param_tensor, "\t", self.model.state_dict()[param_tensor].size())
+                            print('dummy model')
+                            for param_tensor in self.dummy_model.state_dict():
+                                print(param_tensor, "\t", self.dummy_model.state_dict()[param_tensor].size())
+
+                            # for i, k in enumerate(lambda_W.keys()):
+                            #     print(i, '', k, lambda_W[k].shape)
                             grad_diff = 0
                             for idx, k in enumerate(lambda_W.keys()):
+
                                 gx = dummy_dy_dx[idx]
                                 gy = lambda_W[k]
 
-                                # print("gx.shape, gy.shape", gx.shape, gy.shape)
 
                                 grad_diff += ((torch.flatten(gx) - torch.flatten(gy)) ** 2).sum()
                             grad_diff.backward()
@@ -312,13 +328,16 @@ class AdvClient:
                         plt.subplot(rows, total_slices // rows, i + 1)
                         plt.imshow(history[i])
                         plt.title("batch id = %d, iter=%d" % (batch_idx, i * step_size))
-                        plt.xlabel("Current Loss = %f"%( loss_list[i]))
+                        plt.xlabel("Loss = {:.6e}".format(loss_list[i]))
                         # plt.axis('off')    
-                    plt.suptitle('Attack status: %d , Model type: %s, data type: %s' % (self.args.attack, self.args.model_type, self.args.datatype))
+                    
                     if not "sketch" in self.args.model_type:
+                        plt.suptitle('Attack status: %d , Model type: %s, data type: %s' % (self.args.attack, self.args.model_type, self.args.datatype))
                         save_path = './data/adv_attack_res/%s_%s_attacking_%d_batch%d.jpg' \
                             % (self.args.model_type, self.args.datatype, self.args.attack, batch_idx)
                     else:
+                        plt.suptitle('Attack status: %d , Model type: %s, Sketch_method: %s, data type: %s' \
+                            % (self.args.attack, self.args.model_type, self.args.sketchtype, self.args.datatype))
                         save_path = './data/adv_attack_res/%s_%s_%s_attacking_%d_batch%d.jpg' \
                             % (self.args.model_type, self.args.sketchtype, self.args.datatype, self.args.attack, batch_idx)
                     print("Successfully attacked, saved image in ", save_path)

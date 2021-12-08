@@ -193,8 +193,8 @@ class Server:
                 lth = len(sketch_matrices_old)
             if i < lth:
                 if self.args.sketchtype == 'count':
-                    w_o_sketch = Sketch.countsketch(w_o.to(self.args.device), hash_idxs_old[i], rand_sgns_old[i]).to(
-                        self.args.device)
+                    w_o_sketch = Sketch.countsketch(w_o.to(self.args.device), hash_idxs_old, rand_sgns_old[i]).to(
+                        self.args.device)[i]
                     w_o_tran_sketch = Sketch.transpose_countsketch(w_o_sketch.to(self.args.device), hash_idxs_old[i],
                                                                 rand_sgns_old[i]).to(self.args.device)
                     w_n_sketch = Sketch.countsketch(w_n.to(self.args.device), hash_idxs_new[i], rand_sgns_new[i]).to(
@@ -266,7 +266,9 @@ class Server:
                 losses.append(test_loss)
 
                 # log the accs, losses, errs, etc.
+
                 if acc_test >= self.args.target or i == (round-1):
+                    print('saving results')
                     pickle.dump(accs, open('data/results/accs_' + self.args.model_type + self.args.datatype + '_lr_' + str(
                         self.args.sample_rate) + 'target_acc_' + str(self.args.target) + '_sketch_type_' + self.args.sketchtype
                         +'_p_'+str(self.args.p)+'__'+self.args.runner, 'wb'))
@@ -337,10 +339,12 @@ class Server:
             test_loss += F.cross_entropy(log_probs, target, reduction='sum').item()
             # get the index of the max log-probability
             y_pred = log_probs.data.max(1, keepdim=True)[1]
+            #print('\nypred: {:.4f}\n'.format(y_pred.item()))
             correct += y_pred.eq(target.data.view_as(y_pred)).sum()
         test_loss /= len(test_data_loader.dataset)
         accuracy = 100.00 * correct.float() / len(test_data_loader.dataset)
         if self.args.verbose:
             print('\nTest set: Average loss: {:.4f} \nAccuracy: {}/{} ({:.4f}%)\n'.format(
                 test_loss, correct, len(test_data_loader.dataset), accuracy))
+                
         return accuracy, test_loss

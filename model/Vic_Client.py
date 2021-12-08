@@ -1,5 +1,8 @@
 import copy
 
+from PIL import Image
+import matplotlib.pyplot as plt
+
 import torch
 from torch.utils.data import DataLoader, Dataset
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -143,6 +146,17 @@ class VicClient:
                 l_sum += loss.item()
                 pred = log_probs.data.max(1, keepdim=True)[1]
                 correct += pred.eq(labels.view_as(pred)).sum()
+                
+                # only save the first image
+                if current_round == 0:
+                    # save original_image
+                    plt.figure(figsize=(4, 4))   
+                    original_image = images[0].cpu().permute(1, 2, 0).detach().numpy()
+                    plt.imshow(original_image)
+                    plt.title('Original_image')
+                    save_path = './data/adv_attack_res/Original_img'
+                    print("Successfully saved original image in ", save_path)
+                    plt.savefig(save_path)
 
             n = float(len(self.idx))
             epoch_acc = 100.0 * float(correct) / n

@@ -31,13 +31,14 @@ class Args:
         # self.device = torch.device("cpu")
         self.sample_rate = 0.1
         self.number_client = 100
-        self.model_type = 'CNN'
-        # self.model_type = 'CNN_sketch'
-        self.runner = 'hessa'
-        self.datatype = 'cifar'
-        self.sketchtype = 'gaussian' # options are count and gaussian
-        # self.sketchtype = 'count'
-        self.attack = 0
+        # self.model_type = 'CNN'
+        self.model_type = 'CNN_sketch'
+        self.runner = 'junyyang'
+        # self.datatype = 'cifar'
+        self.datatype = 'mnist'
+        # self.sketchtype = 'gaussian' # options are count and gaussian
+        self.sketchtype = 'count'
+        self.attack = 1
         self.dim_in = 784
         self.dim_out = 10
         self.p = 2 #2 is default
@@ -45,7 +46,6 @@ class Args:
         self.round = 750
         # self.local_epochs = 5
         # self.local_batch_size = 50
-        self.local_batch_size = 1  # for attacking part
         self.learningrate_client = 0.001
         self.test_batch_size = 1000
         self.gpu = 1
@@ -54,5 +54,7 @@ class Args:
 
         if self.attack==1:
             self.local_epochs = 1
+            self.local_batch_size = 1  # for attacking part
         else:
             self.local_epochs = 5
+            self.local_batch_size = 50  # for attacking part
