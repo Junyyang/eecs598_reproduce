@@ -33,15 +33,18 @@ class Args:
         self.number_client = 100
         # self.model_type = 'CNN'
         self.model_type = 'CNN_sketch'
-        self.runner = 'junyyang'
-        # self.datatype = 'cifar'
-        self.datatype = 'mnist'
-        # self.sketchtype = 'gaussian' # options are count and gaussian
-        self.sketchtype = 'count'
-        self.attack = 1
+        self.runner = 'hesse'
+        self.datatype = 'cifar'
+        # self.datatype = 'mnist'
+        if 'sketch' in self.model_type:
+            #self.sketchtype = 'gaussian'     # options are count and gaussian
+            self.sketchtype = 'count'
+        else:
+            self.sketchtype = 'wo_sketch'
+        self.attack = 0                  # attacking status
         self.dim_in = 784
         self.dim_out = 10
-        self.p = 2 #2 is default
+        self.p = 10                      # 10 is last time value
         self.learningrate_server = 1
         self.round = 750
         # self.local_epochs = 5
@@ -54,7 +57,9 @@ class Args:
 
         if self.attack==1:
             self.local_epochs = 1
-            self.local_batch_size = 1  # for attacking part
+            self.local_batch_size = 1   # for attacking part
+            self.p = 2                  # otherwise, s = math.floor(n / q) in sketch.py would be zero
+            #self.number_client = 2
         else:
             self.local_epochs = 5
-            self.local_batch_size = 50  # for attacking part
+            self.local_batch_size = 50

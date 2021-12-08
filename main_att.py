@@ -4,7 +4,7 @@ import os
 import argparse
 import time
 
-random_seed = 6667
+random_seed = 6666
 # 6666 for horse
 #6667 for nothing
 np.random.seed(random_seed)

@@ -46,6 +46,7 @@ if __name__ == "__main__":
     elif args.datatype == 'cifar':
         path = './data/cifar'
         train_data, test_data = load_cifar(path)
+        print("dataset1: ", args.datatype)
     # # for Labeled Faces In the Wild
     elif args.datatype == 'LFW':
         path = './data/LFW'

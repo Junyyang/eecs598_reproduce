@@ -193,10 +193,10 @@ class Server:
                 lth = len(sketch_matrices_old)
             if i < lth:
                 if self.args.sketchtype == 'count':
-                    w_o_sketch = Sketch.countsketch(w_o.to(self.args.device), hash_idxs_old, rand_sgns_old[i]).to(
-                        self.args.device)[i]
+                    w_o_sketch = Sketch.countsketch(w_o.to(self.args.device), hash_idxs_old[i], rand_sgns_old[i]).to(
+                    self.args.device)
                     w_o_tran_sketch = Sketch.transpose_countsketch(w_o_sketch.to(self.args.device), hash_idxs_old[i],
-                                                                rand_sgns_old[i]).to(self.args.device)
+                                                               rand_sgns_old[i]).to(self.args.device)
                     w_n_sketch = Sketch.countsketch(w_n.to(self.args.device), hash_idxs_new[i], rand_sgns_new[i]).to(
                         self.args.device)
                     w_n_tran_sketch = Sketch.transpose_countsketch(w_n_sketch.to(self.args.device), hash_idxs_new[i],
@@ -339,7 +339,7 @@ class Server:
             test_loss += F.cross_entropy(log_probs, target, reduction='sum').item()
             # get the index of the max log-probability
             y_pred = log_probs.data.max(1, keepdim=True)[1]
-            #print('\nypred: {:.4f}\n'.format(y_pred.item()))
+            #print(test_data_loader.dataset)
             correct += y_pred.eq(target.data.view_as(y_pred)).sum()
         test_loss /= len(test_data_loader.dataset)
         accuracy = 100.00 * correct.float() / len(test_data_loader.dataset)
