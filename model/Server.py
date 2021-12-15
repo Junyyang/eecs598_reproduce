@@ -54,7 +54,7 @@ class Server:
         elif self.args.model_type == 'CNN_sketch' and self.args.datatype == 'mnist':
             self.server_model = CNNMnist_Sketch(self.args.p).to(self.args.device)
         elif self.args.model_type == 'CNN_sketch' and self.args.datatype == 'LFW':
-            self.server_model = CNNCifar_Sketch(num_classes = 2).to(self.args.device)
+            self.server_model = CNNCifar_Sketch(self.args.p, num_classes = 2).to(self.args.device)
 
         self.server_model.train()
         print('Whether run on GPU', next(self.server_model.parameters()).is_cuda)
@@ -102,10 +102,8 @@ class Server:
 
         # args.model_type = CNN: standard CNN NN: multilayer perceptron 
         else: 
-            # attack is false
             num_client = int(len(self.clients) * self.args.sample_rate) # random sample clients, num = total_num * rate
             self.working_client = np.random.choice(len(self.clients), num_client, replace=False)
-            # self.working_client = [0]
             for client_id in self.working_client:
                 self.clients[client_id].get_paras(copy.deepcopy(self.global_weights), None, None) # self.model.load_state_dict(paras)
         
@@ -259,7 +257,7 @@ class Server:
                     ### print('client', client_id)  # cancel print client
                     client = self.clients[client_id]
                     train_loss, train_acc = client.train(i)
-                    ### print('client', client_id, ' -- ', 'train loss:', train_loss, 'train_acc:', train_acc)  # cancel print client
+                    print('client', client_id, ' -- ', 'train loss:', train_loss, 'train_acc:', train_acc)  # cancel print client
                 self.update_paras()  # get grads, avg, W_new = W_old - delta_avg
                 acc_test, test_loss = self.test()
                 accs.append(acc_test)
@@ -297,7 +295,7 @@ class Server:
                 self.broadcast() # client get_paras(self.global_weights)
                 # train each client
                 for client_id in self.working_client:
-                    print('client', client_id)
+                    # print('client', client_id)
                     client = self.clients[client_id]
                     train_loss, train_acc = client.train(i)
                     print('client', client_id, ' -- ', 'train loss:', train_loss, 'train_acc:', train_acc)

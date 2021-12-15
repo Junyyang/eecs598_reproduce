@@ -46,12 +46,11 @@ if __name__ == "__main__":
     elif args.datatype == 'cifar':
         path = './data/cifar'
         train_data, test_data = load_cifar(path)
-        print("dataset1: ", args.datatype)
-    # # for Labeled Faces In the Wild
     elif args.datatype == 'LFW':
-        path = './data/LFW'
+        path = './data/lfw/lfw_gender'
         train_data, test_data = load_LFW(path)
-
+    else:
+        print("No dataset is loaded")
 
     data_split = sample_iid(train_data, args.number_client)
 
@@ -59,23 +58,7 @@ if __name__ == "__main__":
     print("model type: ", args.model_type)
     print("dataset: ", args.datatype)
     print("target test accuracy: ", args.target)
-
     print("Start training")
-
-
-    # ====================================================
-    # # adversory client added
-    # num_vic_adv = 2
-    # data_split_2 = sample_iid(train_data, num_vic_adv)
-    # vic_client = VicClient(train_data, data_split_2[0], args)
-    # adv_client = AdvClient(train_data, data_split_2[1], args)
-
-    # attacked_server = Server_att( [adv_client, vic_client], test_data, args, attack = True)
-    # attacked_server.init_paras()
-    # attacked_server.train()
-    # time_end = time.time()
-
-    # print('The attacked training takes {} seconds.'.format(time_end-time_begin))
 
     # # ====================================================
     # # Not attacked server training
@@ -91,6 +74,7 @@ if __name__ == "__main__":
     # exit()
     server.train()
     time_end = time.time()
-    print('The entire training takes {} seconds.'.format(time_end-time_begin))
+    # print('The entire training takes {} seconds.'.format(time_end-time_begin))
+    print('total training times used for {} {} is {}'.format(args.model_type, args.datatype, time.time() - time_begin))
 
 

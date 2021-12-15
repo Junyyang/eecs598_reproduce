@@ -261,7 +261,7 @@ class AdvClient:
                     history = []
                     loss_list = []
                     step_size = 30
-                    total_iter = 300
+                    total_iter = 150 # 300
 
                     optimizer = torch.optim.LBFGS([dummy_images, dummy_labels])
                     # =============================================
@@ -310,35 +310,20 @@ class AdvClient:
                         
                         optimizer.step(closure)
 
-
                         # save results to history per step_size operationn
                         # if iters % step_size == 0: 
-                        if iters in [0,59,119,179]:
+                        if iters in [0, 49, 99, 149]:
                             current_loss = closure()
                             print("During batch idx:", batch_idx,", iteration number:", iters, ", current loss: %.4f" % current_loss.item())         # !!!!!!!!!!!!!! loss is too high
                             # Can't call numpy() on Variable that requires grad. Use var.detach().numpy() instead
                             Adv_result = dummy_images[0].cpu().permute(1, 2, 0).detach().numpy()
-                            plt.figure(figsize=(4, 4))
-                            plt.imshow(Adv_result)
-                            save_path = './data/adv_attack_res/%s/%s_pic%d_%s_iter%d.jpg' % \
-                                (self.args.datatype, self.args.datatype, 1, self.args.sketchtype, iters+1)
-                            print("Successfully saved original image in ", save_path)
-                            plt.savefig(save_path)
-
-                        # # save results to history per step_size operationn
-                        # # if iters % step_size == 0: 
-                        # if iters in [0,99,199,299]:
-                        #     current_loss = closure()
-                        #     print("During batch idx:", batch_idx,", iteration number:", iters, ", current loss: %.4f" % current_loss.item())         # !!!!!!!!!!!!!! loss is too high
-                        #     # Can't call numpy() on Variable that requires grad. Use var.detach().numpy() instead
-                        #     Adv_result = dummy_images[0].cpu().permute(1, 2, 0).detach().numpy()
-                        #     history.append(Adv_result) # tt = transforms.ToPILImage()
-                        #     loss_list.append(current_loss.item())
+                            history.append(Adv_result) # tt = transforms.ToPILImage()
+                            loss_list.append(current_loss.item())
 
 
                     # adversory attack end
 
-                    # # save attack result as subplot
+                    # save attack result as subplot
                     # plt.figure(figsize=(12, 8))   
                     # rows = 2
                     # total_slices = total_iter // step_size
@@ -349,17 +334,27 @@ class AdvClient:
                     #     plt.xlabel("Loss = {:.6e}".format(loss_list[i]))
                     #     # plt.axis('off')    
                     
-                    if not "sketch" in self.args.model_type:
-                        plt.suptitle('Attack status: %d , Model type: %s, data type: %s' % (self.args.attack, self.args.model_type, self.args.datatype))
-                        save_path = './data/adv_attack_res/%s_%s_attacking_%d_batch%d.jpg' \
-                            % (self.args.model_type, self.args.datatype, self.args.attack, batch_idx)
-                    else:
-                        plt.suptitle('Attack status: %d , Model type: %s, Sketch_method: %s, data type: %s' \
-                            % (self.args.attack, self.args.model_type, self.args.sketchtype, self.args.datatype))
-                        save_path = './data/adv_attack_res/%s_%s_%s_attacking_%d_batch%d.jpg' \
-                            % (self.args.model_type, self.args.sketchtype, self.args.datatype, self.args.attack, batch_idx)
-                    print("Successfully attacked, saved image in ", save_path)
-                    plt.savefig(save_path)
+                    # if not "sketch" in self.args.model_type:
+                    #     plt.suptitle('Attack status: %d , Model type: %s, data type: %s' % (self.args.attack, self.args.model_type, self.args.datatype))
+                    #     save_path = './data/adv_attack_res/%s_%s_attacking_%d_batch%d.jpg' \
+                    #         % (self.args.model_type, self.args.datatype, self.args.attack, batch_idx)
+                    # else:
+                    #     plt.suptitle('Attack status: %d , Model type: %s, Sketch_method: %s, data type: %s' \
+                    #         % (self.args.attack, self.args.model_type, self.args.sketchtype, self.args.datatype))
+                    #     save_path = './data/adv_attack_res/%s_%s_%s_attacking_%d_batch%d.jpg' \
+                    #         % (self.args.model_type, self.args.sketchtype, self.args.datatype, self.args.attack, batch_idx)
+                    # print("Successfully attacked, saved image in ", save_path)
+                    # plt.savefig(save_path)
+
+                    iter_list = [0, 49, 99, 149]
+                    for i, img in enumerate(history):
+                        iteration = iter_list[i]
+                        plt.figure(figsize=(4, 4))
+                        plt.imshow(img)
+                        save_path = './data/adv_attack_res/%s/%s_pic%d_%s_iter%d.jpg' % \
+                            (self.args.datatype, self.args.datatype, 1, self.args.sketchtype, iteration+1)
+                        print("Successfully saved original image in ", save_path)
+                        plt.savefig(save_path)
                     # =============================================
 
                     

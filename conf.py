@@ -28,20 +28,26 @@ import torch
 class Args:
     def __init__(self):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.runner = 'junyyang'
         # self.device = torch.device("cpu")
         self.sample_rate = 0.1
         self.number_client = 100
-        # self.model_type = 'CNN'
-        self.model_type = 'CNN_sketch'
-        self.runner = 'hesse'
-        self.datatype = 'cifar'
+        # =============================
+        self.model_type = 'CNN'
+        # self.model_type = 'CNN_sketch'
+        # =============================
+        # self.datatype = 'cifar'
         # self.datatype = 'mnist'
+        self.datatype = 'LFW'
+        # =============================
         if 'sketch' in self.model_type:
-            #self.sketchtype = 'gaussian'     # options are count and gaussian
+            # self.sketchtype = 'gaussian'     # options are count and gaussian
             self.sketchtype = 'count'
         else:
             self.sketchtype = 'wo_sketch'
+        # =============================
         self.attack = 0                  # attacking status
+        # =============================
         self.dim_in = 784
         self.dim_out = 10
         self.p = 10                      # 10 is last time value
@@ -56,6 +62,7 @@ class Args:
         self.target = 97
 
         if self.attack==1:
+            self.number_client = 2
             self.local_epochs = 1
             self.local_batch_size = 1   # for attacking part
             self.p = 2                  # otherwise, s = math.floor(n / q) in sketch.py would be zero
